@@ -1,17 +1,15 @@
 [package]
-name = "HyperFillContracts"
+name = "hypermove_vault"
 version = "1.0.0"
-authors = ["HyperFill Team"]
+authors = ["HyperMove Team"]
 
 [addresses]
-hyperfill = "0xe22a7dbf85b88f1c950b96923e29f0213121002f296c0572549f2a6a7e7fd6f5"
+hypermove_vault = "96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82"
 
 [dev-addresses]
-hyperfill = "0xCAFE"
+hypermove_vault = "0x42"
 
 [dependencies.AptosFramework]
 git = "https://github.com/aptos-labs/aptos-core.git"
 rev = "mainnet"
 subdir = "aptos-move/framework/aptos-framework"
-
-[dev-dependencies]

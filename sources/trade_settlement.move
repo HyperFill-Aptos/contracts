@@ -1,4 +1,4 @@
-module hyperfill::trade_settlement {
+module hypermove_vault::trade_settlement {
     use std::signer;
     use std::error;
     use std::vector;
