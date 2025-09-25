@@ -1,10 +1,10 @@
-# HyperMove Aptos Smart Contracts
+# HyperMover Aptos Smart Contracts
 
 Move smart contracts for HyperFill vault system on Aptos blockchain.
 
 ## Features
 
-### HyperMove Vault
+### HyperMover Vault
 - Deposit APT and receive vault shares
 - Withdraw shares to receive APT + profits
 - Agent authorization for trading
