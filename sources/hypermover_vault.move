@@ -142,7 +142,7 @@ module hypermove_vault::vault {
     }
 
     // ===== INITIALIZATION =====
-    public fun initialize<CoinType>(
+    public entry fun initialize<CoinType>(
         account: &signer,
         min_deposit: u64
     ) {

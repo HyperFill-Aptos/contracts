@@ -93,7 +93,7 @@ module hypermove_vault::trade_settlement {
     }
 
     fun verify_trade_signature(
-        signer_addr: address,
+        _signer_addr: address,
         order_id: u64,
         base_asset: String,
         quote_asset: String,
@@ -102,7 +102,7 @@ module hypermove_vault::trade_settlement {
         side: String,
         timestamp: u64,
         nonce: u64,
-        signature: vector<u8>
+        _signature: vector<u8>
     ): bool {
         let message_data = vector::empty<u8>();
 

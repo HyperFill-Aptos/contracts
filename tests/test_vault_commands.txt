@@ -1,0 +1,235 @@
+# HyperMover Vault Testing Commands - MOCK TOKEN ONLY
+# Complete test script for MockToken vault functions
+# VAULT_OWNER: 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82
+# FEE_RECIPIENT: 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 
+# USER_ADDRESS: 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 
+# Replace <AGENT_ADDRESS> 
+
+
+# ===== ENVIRONMENT SETUP =====
+export PROFILE=testnet
+
+# Get account addresses
+aptos account list --profile $PROFILE
+
+# Fund accounts with APT for testing
+aptos account fund-with-faucet --profile $PROFILE --amount 1000000000
+
+# ===== 1. MOCK TOKEN INITIALIZATION =====
+# Initialize MockToken
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::initialize \
+  --args string:"MockToken" string:"MOCK" u8:6 bool:true \
+  --profile $PROFILE
+
+# Register your account to receive mock tokens
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::register \
+  --profile $PROFILE
+
+# Mint 1,000,000 MOCK tokens for testing (1000000 * 10^6 = 1000000000000)
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::mint \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 u64:1000000000000 \
+  --profile $PROFILE
+
+# Use faucet to get more mock tokens (easy testing - 100 MOCK tokens)
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::faucet \
+  --args u64:100000000 \
+  --profile $PROFILE
+
+# ===== 2. VAULT INITIALIZATION (MOCK TOKEN) =====
+# Initialize the vault with MockToken - minimum deposit of 1 MOCK (1000000 units)
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::initialize \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args u64:1000000 \
+  --profile $PROFILE
+
+# ===== 3. ADMIN CONFIGURATION (MOCK TOKEN VAULT) =====
+# Set fee recipient for MockToken vault
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::set_fee_recipient \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile $PROFILE
+
+# Set withdrawal fee to 0.5% for MockToken vault
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::set_withdrawal_fee \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args u64:50 address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile $PROFILE
+
+# Set minimum deposit to 2 MOCK tokens
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::set_min_deposit \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args u64:2000000 address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile $PROFILE
+
+# Set max allocation to 80% (8000 basis points)
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::set_max_allocation \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args u64:8000 address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile $PROFILE
+
+# ===== 4. AGENT MANAGEMENT =====
+# Add authorized agent for MockToken vault
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::add_authorized_agent \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:<AGENT_ADDRESS> address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile $PROFILE
+
+# ===== 5. USER DEPOSIT OPERATIONS =====
+# User deposits 100 MOCK tokens into MockToken vault (100 * 10^6 = 100000000)
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::deposit_liquidity \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args u64:100000000 \
+  --profile $PROFILE
+
+# Owner deposits additional liquidity without shares (profit injection)
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::deposit_liquidity_without_shares \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args u64:50000000 address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile $PROFILE
+
+# ===== 6. AGENT TRADING OPERATIONS =====
+# Agent moves 50 MOCK from vault to trading wallet
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::move_from_vault_to_wallet \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args u64:50000000 address:<AGENT_ADDRESS> address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile agent_profile
+
+# Agent returns 60 MOCK to vault (50 MOCK capital + 10 MOCK profit)
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::move_from_wallet_to_vault \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args u64:60000000 u64:10000000 address:<AGENT_ADDRESS> address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile agent_profile
+
+# Agent returns all capital from trading wallet
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::return_all_capital \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:<AGENT_ADDRESS> address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile agent_profile
+
+# ===== 7. USER WITHDRAWAL =====
+# User withdraws all profits and principal
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::withdraw_profits \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --profile $PROFILE
+
+# ===== 8. FEE WITHDRAWAL =====
+# Withdraw accumulated fees to fee recipient
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::withdraw_fees \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile $PROFILE
+
+# ===== 9. PAUSE/UNPAUSE OPERATIONS =====
+# Pause the vault
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::pause \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile $PROFILE
+
+# Unpause the vault
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::unpause \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile $PROFILE
+
+# ===== 10. AGENT REMOVAL =====
+# Remove authorized agent
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::remove_authorized_agent \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:<AGENT_ADDRESS> address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --profile $PROFILE
+
+# ===== VIEW FUNCTIONS FOR TESTING VERIFICATION =====
+
+# ===== MOCK TOKEN VAULT VIEW FUNCTIONS =====
+# Get available assets in MockToken vault
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::get_available_assets \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82
+
+# Get current share price for MockToken vault
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::get_share_price \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82
+
+# Get user share balance in MockToken vault
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::get_user_share_balance \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82
+
+# Get user profits from MockToken vault
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::get_user_profits \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82
+
+# Get vault state (balance, assets, shares, price, fees)
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::get_vault_state \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82
+
+# Get total accumulated fees
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::get_total_accumulated_fees \
+  --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82
+
+# ===== MOCK TOKEN VIEW FUNCTIONS =====
+# Check mock token balance
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::get_balance \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82
+
+# Check mock token total supply
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::total_supply
+
+# Check mock token details
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::name
+
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::symbol
+
+# Check if account is registered for mock tokens
+aptos move view \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::is_registered \
+  --args address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82
+
+# ===== MOCK TOKEN OPERATIONS =====
+# Transfer mock tokens to another account
+aptos move run \
+  --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::transfer \
+  --args address:<AGENT_ADDRESS> u64:10000000 \
+  --profile $PROFILE
+
+# ===== ACCOUNT BALANCE CHECKS =====
+# Check APT balance
+aptos account balance --profile $PROFILE
+
+# Check MockToken balance (alternative method)
+aptos account balance --profile $PROFILE --coin-type 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken
