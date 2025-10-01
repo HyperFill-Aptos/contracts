@@ -196,7 +196,7 @@ module hypermove_vault::orderbook {
             user_open_orders: table::new(),
         };
 
-        table::add(&mut registry.markets, market_id, MarketInfo {
+        registry.markets.add(market_id, MarketInfo {
             market_id,
             base_type: base_name,
             quote_type: quote_name,
@@ -250,7 +250,7 @@ module hypermove_vault::orderbook {
         assert!(size % market.lot_size == 0, E_INVALID_SIZE);
 
         let order_id = market.order_id_counter;
-        market.order_id_counter = market.order_id_counter + 1;
+        market.order_id_counter += 1;
 
         let order = Order {
             order_id,
@@ -270,14 +270,14 @@ module hypermove_vault::orderbook {
             assert!(user_balance >= required_base, E_INSUFFICIENT_BALANCE);
             let deposit = coin::withdraw<BaseCoin>(account, required_base);
             coin::merge(&mut market.base_escrow, deposit);
-            market.base_total = market.base_total + required_base;
+            market.base_total += required_base;
         } else {
             let required_quote = (size * price) / market.lot_size;
             let user_balance = coin::balance<QuoteCoin>(user_addr);
             assert!(user_balance >= required_quote, E_INSUFFICIENT_BALANCE);
             let deposit = coin::withdraw<QuoteCoin>(account, required_quote);
             coin::merge(&mut market.quote_escrow, deposit);
-            market.quote_total = market.quote_total + required_quote;
+            market.quote_total += required_quote;
         };
 
         // Post-only check: if crosses, reject posting
@@ -295,7 +295,7 @@ module hypermove_vault::orderbook {
         };
 
         let mut_order = order;
-        let filled_size = match_order<BaseCoin, QuoteCoin>(market, &mut mut_order);
+        let _filled_size = match_order<BaseCoin, QuoteCoin>(market, &mut mut_order);
 
         let remaining = mut_order.size - mut_order.filled;
         if (remaining > 0) {
@@ -355,8 +355,8 @@ module hypermove_vault::orderbook {
                 let fill_size = if (taker_remaining < maker_remaining) { taker_remaining } else { maker_remaining };
 
                 execute_fill<BaseCoin, QuoteCoin>(market, order, &maker_order, level_price, fill_size);
-                order.filled = order.filled + fill_size;
-                total_filled = total_filled + fill_size;
+                order.filled += fill_size;
+                total_filled += fill_size;
 
                 // If maker has leftover, push it back to the same price level (FIFO tail)
                 if (maker_remaining > fill_size) {
@@ -389,8 +389,8 @@ module hypermove_vault::orderbook {
                 let fill_size = if (taker_remaining < maker_remaining) { taker_remaining } else { maker_remaining };
 
                 execute_fill<BaseCoin, QuoteCoin>(market, order, &maker_order, level_price, fill_size);
-                order.filled = order.filled + fill_size;
-                total_filled = total_filled + fill_size;
+                order.filled += fill_size;
+                total_filled += fill_size;
 
                 if (maker_remaining > fill_size) {
                     let updated_maker = Order {
@@ -448,8 +448,8 @@ module hypermove_vault::orderbook {
             let quote_fee = coin::extract(&mut market.quote_escrow, fee_amount_quote);
             coin::merge(&mut market.fee_store_quote, quote_fee);
 
-            market.base_total = market.base_total - base_amount;
-            market.quote_total = market.quote_total - quote_amount;
+            market.base_total -= base_amount;
+            market.quote_total -= quote_amount;
         } else {
             // Taker buys base, maker sells base
             let base_to_buyer = base_amount - fee_amount_base;
@@ -469,8 +469,8 @@ module hypermove_vault::orderbook {
             let quote_fee = coin::extract(&mut market.quote_escrow, fee_amount_quote);
             coin::merge(&mut market.fee_store_quote, quote_fee);
 
-            market.base_total = market.base_total - base_amount;
-            market.quote_total = market.quote_total - quote_amount;
+            market.base_total -= base_amount;
+            market.quote_total -= quote_amount;
         };
 
         event::emit(OrderFilledEvent {
@@ -499,15 +499,15 @@ module hypermove_vault::orderbook {
         // Track locator for cancellation
         let locator = OrderLocator { side: order.side, price: order.price, idx: 0, user: order.user };
         // idx will be updated inside insert_into_side when pushing to queue tail
-        table::add(&mut market.order_locators, order.order_id, locator);
+        market.order_locators.add(order.order_id, locator);
         update_locator_idx_after_insert<BaseCoin, QuoteCoin>(market, order.order_id);
 
         // Track per-user
-        if (!table::contains(&market.user_open_orders, order.user)) {
-            table::add(&mut market.user_open_orders, order.user, vector::empty<u64>());
+        if (!market.user_open_orders.contains(order.user)) {
+            market.user_open_orders.add(order.user, vector::empty<u64>());
         };
-        let user_vec = table::borrow_mut(&mut market.user_open_orders, order.user);
-        vector::push_back(user_vec, order.order_id);
+        let user_vec = market.user_open_orders.borrow_mut(order.user);
+        user_vec.push_back(order.order_id);
     }
 
     fun store_user_order<BaseCoin, QuoteCoin>(market: &mut Market<BaseCoin, QuoteCoin>, user_addr: address, order: Order) {
@@ -534,35 +534,35 @@ module hypermove_vault::orderbook {
         let user_addr = signer::address_of(account);
         let market = borrow_global_mut<Market<BaseCoin, QuoteCoin>>(market_addr);
 
-        if (!table::contains(&market.order_locators, order_id)) return false;
-        let locator = *table::borrow(&market.order_locators, order_id);
+        if (!market.order_locators.contains(order_id)) return false;
+        let locator = *market.order_locators.borrow(order_id);
         assert!(locator.side == side && locator.price == price, E_ORDER_NOT_FOUND);
 
         // Locate level and remove order by swap_remove, updating locator for swapped order
         let side_ref = if (side == ASK) { &mut market.asks } else { &mut market.bids };
-        assert!(table::contains(&side_ref.levels, price), E_ORDER_NOT_FOUND);
-        let level = table::borrow_mut(&mut side_ref.levels, price);
+        assert!(side_ref.levels.contains(price), E_ORDER_NOT_FOUND);
+        let level = side_ref.levels.borrow_mut(price);
         let idx = locator.idx as u64;
-        let last_index = vector::length(&level.orders) - 1;
+        let last_index = level.orders.length() - 1;
 
-        let order_copy = *vector::borrow(&level.orders, idx);
+        let order_copy = level.orders[idx];
         assert!(order_copy.user == user_addr, E_NOT_AUTHORIZED);
         assert!(order_copy.order_id == order_id, E_ORDER_NOT_FOUND);
 
         if (idx < last_index) {
-            let swapped_id = (*vector::borrow(&level.orders, last_index)).order_id;
-            vector::swap_remove(&mut level.orders, idx);
-            if (table::contains(&market.order_locators, swapped_id)) {
-                let swapped_loc = table::borrow_mut(&mut market.order_locators, swapped_id);
+            let swapped_id = (level.orders[last_index]).order_id;
+            level.orders.swap_remove(idx);
+            if (market.order_locators.contains(swapped_id)) {
+                let swapped_loc = market.order_locators.borrow_mut(swapped_id);
                 swapped_loc.idx = idx;
             };
         } else {
-            vector::swap_remove(&mut level.orders, idx);
+            level.orders.swap_remove(idx);
         };
 
         // If level empty, remove price from side
-        if (vector::is_empty(&level.orders)) {
-            table::remove(&mut side_ref.levels, price);
+        if (level.orders.is_empty()) {
+            side_ref.levels.remove(price);
             remove_price_from_side(side_ref, price);
         };
 
@@ -571,16 +571,16 @@ module hypermove_vault::orderbook {
         if (side == ASK) {
             let refund = coin::extract(&mut market.base_escrow, remaining_size);
             coin::deposit(user_addr, refund);
-            market.base_total = market.base_total - remaining_size;
+            market.base_total -= remaining_size;
         } else {
             let refund_amount = (remaining_size * order_copy.price) / market.lot_size;
             let refund = coin::extract(&mut market.quote_escrow, refund_amount);
             coin::deposit(user_addr, refund);
-            market.quote_total = market.quote_total - refund_amount;
+            market.quote_total -= refund_amount;
         };
 
         // Clean up tracking
-        table::remove(&mut market.order_locators, order_id);
+        market.order_locators.remove(order_id);
         remove_user_order_id<BaseCoin, QuoteCoin>(market, user_addr, order_id);
 
         event::emit(OrderCancelledEvent {
@@ -607,10 +607,10 @@ module hypermove_vault::orderbook {
     }
 
     fun remove_user_order_id<BaseCoin, QuoteCoin>(market: &mut Market<BaseCoin, QuoteCoin>, user_addr: address, order_id: u64) {
-        if (!table::contains(&market.user_open_orders, user_addr)) return;
-        let user_vec = table::borrow_mut(&mut market.user_open_orders, user_addr);
-        let (found, idx) = vector::index_of(user_vec, &order_id);
-        if (found) { vector::swap_remove(user_vec, idx); };
+        if (!market.user_open_orders.contains(user_addr)) return;
+        let user_vec = market.user_open_orders.borrow_mut(user_addr);
+        let (found, idx) = user_vec.index_of(&order_id);
+        if (found) { user_vec.swap_remove(idx); };
     }
 
     #[view]
@@ -649,24 +649,24 @@ module hypermove_vault::orderbook {
 
         // Bids: descending
         let i = 0;
-        let max = if (levels < vector::length(&market.bids.prices)) { levels } else { vector::length(&market.bids.prices) };
+        let max = if (levels < market.bids.prices.length()) { levels } else { market.bids.prices.length() };
         while (i < max) {
-            let price = *vector::borrow(&market.bids.prices, i);
-            let level = table::borrow(&market.bids.levels, price);
-            vector::push_back(&mut bid_prices, price);
-            vector::push_back(&mut bid_sizes, sum_open_size(&level.orders));
-            i = i + 1;
+            let price = market.bids.prices[i];
+            let level = market.bids.levels.borrow(price);
+            bid_prices.push_back(price);
+            bid_sizes.push_back(sum_open_size(&level.orders));
+            i += 1;
         };
 
         // Asks: ascending (prices stored ascending)
         let j = 0;
-        let maxa = if (levels < vector::length(&market.asks.prices)) { levels } else { vector::length(&market.asks.prices) };
+        let maxa = if (levels < market.asks.prices.length()) { levels } else { market.asks.prices.length() };
         while (j < maxa) {
-            let price_a = *vector::borrow(&market.asks.prices, j);
-            let level_a = table::borrow(&market.asks.levels, price_a);
-            vector::push_back(&mut ask_prices, price_a);
-            vector::push_back(&mut ask_sizes, sum_open_size(&level_a.orders));
-            j = j + 1;
+            let price_a = market.asks.prices[j];
+            let level_a = market.asks.levels.borrow(price_a);
+            ask_prices.push_back(price_a);
+            ask_sizes.push_back(sum_open_size(&level_a.orders));
+            j += 1;
         };
 
         (bid_prices, bid_sizes, ask_prices, ask_sizes)
@@ -675,22 +675,22 @@ module hypermove_vault::orderbook {
     #[view]
     public fun get_user_orders<BaseCoin, QuoteCoin>(market_addr: address, user_addr: address): vector<OrderInfo> acquires Market {
         let market = borrow_global<Market<BaseCoin, QuoteCoin>>(market_addr);
-        if (!table::contains(&market.user_open_orders, user_addr)) {
+        if (!market.user_open_orders.contains(user_addr)) {
             return vector::empty<OrderInfo>()
         };
-        let ids = table::borrow(&market.user_open_orders, user_addr);
+        let ids = market.user_open_orders.borrow(user_addr);
         let out = vector::empty<OrderInfo>();
         let k = 0;
-        let len = vector::length(ids);
+        let len = ids.length();
         while (k < len) {
-            let oid = *vector::borrow(ids, k);
-            if (table::contains(&market.order_locators, oid)) {
-                let loc = *table::borrow(&market.order_locators, oid);
+            let oid = ids[k];
+            if (market.order_locators.contains(oid)) {
+                let loc = *market.order_locators.borrow(oid);
                 let side_ref = if (loc.side == ASK) { &market.asks } else { &market.bids };
-                if (table::contains(&side_ref.levels, loc.price)) {
-                    let level = table::borrow(&side_ref.levels, loc.price);
-                    let ord = *vector::borrow(&level.orders, loc.idx);
-                    vector::push_back(&mut out, OrderInfo {
+                if (side_ref.levels.contains(loc.price)) {
+                    let level = side_ref.levels.borrow(loc.price);
+                    let ord = level.orders[loc.idx];
+                    out.push_back(OrderInfo {
                         market_id: market.market_id,
                         order_id: ord.order_id,
                         side: ord.side,
@@ -701,7 +701,7 @@ module hypermove_vault::orderbook {
                     });
                 };
             };
-            k = k + 1;
+            k += 1;
         };
         out
     }
@@ -709,8 +709,8 @@ module hypermove_vault::orderbook {
     #[view]
     public fun get_market_stats<BaseCoin, QuoteCoin>(market_addr: address): (u64, u64, u64, u64) acquires Market {
         let market = borrow_global<Market<BaseCoin, QuoteCoin>>(market_addr);
-        let bid_count = vector::length(&market.bids.prices);
-        let ask_count = vector::length(&market.asks.prices);
+        let bid_count = market.bids.prices.length();
+        let ask_count = market.asks.prices.length();
         (bid_count, ask_count, market.base_total, market.quote_total)
     }
 
@@ -733,113 +733,113 @@ module hypermove_vault::orderbook {
     }
 
     fun has_best_price<BaseCoin, QuoteCoin>(side: &OrderBookSide<BaseCoin, QuoteCoin>): bool {
-        !vector::is_empty(&side.prices)
+        !side.prices.is_empty()
     }
 
     fun best_price<BaseCoin, QuoteCoin>(side: &OrderBookSide<BaseCoin, QuoteCoin>): u64 {
-        *vector::borrow(&side.prices, 0)
+        side.prices[0]
     }
 
     fun best_bid_crosses<BaseCoin, QuoteCoin>(bids: &OrderBookSide<BaseCoin, QuoteCoin>, ask_price: u64): bool {
-        if (vector::is_empty(&bids.prices)) { false } else { *vector::borrow(&bids.prices, 0) >= ask_price }
+        if (bids.prices.is_empty()) { false } else { bids.prices[0] >= ask_price }
     }
 
     fun best_ask_crosses<BaseCoin, QuoteCoin>(asks: &OrderBookSide<BaseCoin, QuoteCoin>, bid_price: u64): bool {
-        if (vector::is_empty(&asks.prices)) { false } else { *vector::borrow(&asks.prices, 0) <= bid_price }
+        if (asks.prices.is_empty()) { false } else { asks.prices[0] <= bid_price }
     }
 
     fun insert_into_side<BaseCoin, QuoteCoin>(side: &mut OrderBookSide<BaseCoin, QuoteCoin>, price: u64, order: Order) {
-        if (!table::contains(&side.levels, price)) {
+        if (!side.levels.contains(price)) {
             // Insert price into sorted prices
             let idx = find_insert_index(&side.prices, price, side.is_ask);
-            vector::push_back(&mut side.prices, 0);
+            side.prices.push_back(0);
             shift_right_and_insert(&mut side.prices, idx, price);
-            table::add(&mut side.levels, price, PriceLevel { total_size: 0, orders: vector::empty<Order>() });
+            side.levels.add(price, PriceLevel { total_size: 0, orders: vector::empty<Order>() });
         };
-        let level = table::borrow_mut(&mut side.levels, price);
-        vector::push_back(&mut level.orders, order);
-        level.total_size = level.total_size + (order.size - order.filled);
+        let level = side.levels.borrow_mut(price);
+        level.orders.push_back(order);
+        level.total_size += (order.size - order.filled);
     }
 
     fun update_locator_idx_after_insert<BaseCoin, QuoteCoin>(market: &mut Market<BaseCoin, QuoteCoin>, order_id: u64) {
-        if (!table::contains(&market.order_locators, order_id)) return;
-        let loc = table::borrow_mut(&mut market.order_locators, order_id);
+        if (!market.order_locators.contains(order_id)) return;
+        let loc = market.order_locators.borrow_mut(order_id);
         let side_ref = if (loc.side == ASK) { &market.asks } else { &market.bids };
-        let level = table::borrow(&side_ref.levels, loc.price);
-        let new_idx = vector::length(&level.orders) - 1;
+        let level = side_ref.levels.borrow(loc.price);
+        let new_idx = level.orders.length() - 1;
         loc.idx = new_idx;
     }
 
     fun remove_price_from_side<BaseCoin, QuoteCoin>(side: &mut OrderBookSide<BaseCoin, QuoteCoin>, price: u64) {
-        let (found, idx) = vector::index_of(&side.prices, &price);
-        if (found) { vector::swap_remove(&mut side.prices, idx); };
+        let (found, idx) = side.prices.index_of(&price);
+        if (found) { side.prices.swap_remove(idx); };
     }
 
     fun pop_front_from_best_and_update<BaseCoin, QuoteCoin>(market: &mut Market<BaseCoin, QuoteCoin>, is_ask: bool): (Order, u64) {
         let side_ref = if (is_ask) { &mut market.asks } else { &mut market.bids };
-        let price = *vector::borrow(&side_ref.prices, 0);
-        let level = table::borrow_mut(&mut side_ref.levels, price);
-        let n = vector::length(&level.orders);
-        let first_order = *vector::borrow(&level.orders, 0);
+        let price = side_ref.prices[0];
+        let level = side_ref.levels.borrow_mut(price);
+        let n = level.orders.length();
+        let first_order = level.orders[0];
         // Shift left by one to preserve FIFO and update locators
         let i = 1;
         while (i < n) {
-            let val = *vector::borrow(&level.orders, i);
-            *vector::borrow_mut(&mut level.orders, i - 1) = val;
-            if (table::contains(&market.order_locators, val.order_id)) {
-                let loc = table::borrow_mut(&mut market.order_locators, val.order_id);
+            let val = level.orders[i];
+            *level.orders.borrow_mut(i - 1) = val;
+            if (market.order_locators.contains(val.order_id)) {
+                let loc = market.order_locators.borrow_mut(val.order_id);
                 loc.idx = i - 1;
             };
-            i = i + 1;
+            i += 1;
         };
-        let _ = vector::pop_back(&mut level.orders);
+        let _ = level.orders.pop_back();
         level.total_size = if (first_order.size - first_order.filled <= level.total_size) {
             level.total_size - (first_order.size - first_order.filled)
         } else { 0 };
-        if (vector::is_empty(&level.orders)) {
-            table::remove(&mut side_ref.levels, price);
-            vector::swap_remove(&mut side_ref.prices, 0);
+        if (level.orders.is_empty()) {
+            side_ref.levels.remove(price);
+            side_ref.prices.swap_remove(0);
         };
         // Remove locator for popped order
-        if (table::contains(&market.order_locators, first_order.order_id)) {
-            table::remove(&mut market.order_locators, first_order.order_id);
+        if (market.order_locators.contains(first_order.order_id)) {
+            market.order_locators.remove(first_order.order_id);
         };
         (first_order, price)
     }
 
     fun push_back_to_level<BaseCoin, QuoteCoin>(side: &mut OrderBookSide<BaseCoin, QuoteCoin>, price: u64, order: Order) {
-        let level = table::borrow_mut(&mut side.levels, price);
-        vector::push_back(&mut level.orders, order);
-        level.total_size = level.total_size + (order.size - order.filled);
+        let level = side.levels.borrow_mut(price);
+        level.orders.push_back(order);
+        level.total_size += (order.size - order.filled);
     }
 
     fun set_order_locator<BaseCoin, QuoteCoin>(market: &mut Market<BaseCoin, QuoteCoin>, order_id: u64, is_ask: bool, price: u64) {
         let side = if (is_ask) { ASK } else { BID };
         let side_ref = if (is_ask) { &market.asks } else { &market.bids };
-        let level = table::borrow(&side_ref.levels, price);
-        let idx = vector::length(&level.orders) - 1;
+        let level = side_ref.levels.borrow(price);
+        let idx = level.orders.length() - 1;
         // We need the user; since we don't have it here, we'll leave user as @0x0 — not ideal. Better: caller sets full locator.
         // Instead, fetch the order itself to get user
-        let ord = *vector::borrow(&level.orders, idx);
+        let ord = level.orders[idx];
         let loc = OrderLocator { side, price, idx, user: ord.user };
-        if (table::contains(&market.order_locators, order_id)) {
-            let existing = table::borrow_mut(&mut market.order_locators, order_id);
+        if (market.order_locators.contains(order_id)) {
+            let existing = market.order_locators.borrow_mut(order_id);
             *existing = loc;
         } else {
-            table::add(&mut market.order_locators, order_id, loc);
+            market.order_locators.add(order_id, loc);
         };
         // Ensure user mapping includes id
-        if (!table::contains(&market.user_open_orders, ord.user)) {
-            table::add(&mut market.user_open_orders, ord.user, vector::empty<u64>());
+        if (!market.user_open_orders.contains(ord.user)) {
+            market.user_open_orders.add(ord.user, vector::empty<u64>());
         };
-        let user_vec = table::borrow_mut(&mut market.user_open_orders, ord.user);
-        let (found, _) = vector::index_of(user_vec, &order_id);
-        if (!found) { vector::push_back(user_vec, order_id); };
+        let user_vec = market.user_open_orders.borrow_mut(ord.user);
+        let (found, _) = user_vec.index_of(&order_id);
+        if (!found) { user_vec.push_back(order_id); };
     }
 
     fun remove_order_locator_and_user<BaseCoin, QuoteCoin>(market: &mut Market<BaseCoin, QuoteCoin>, order_id: u64, user: address) {
-        if (table::contains(&market.order_locators, order_id)) {
-            table::remove(&mut market.order_locators, order_id);
+        if (market.order_locators.contains(order_id)) {
+            market.order_locators.remove(order_id);
         };
         remove_user_order_id<BaseCoin, QuoteCoin>(market, user, order_id);
     }
@@ -847,38 +847,38 @@ module hypermove_vault::orderbook {
     fun find_insert_index(prices: &vector<u64>, price: u64, is_ask: bool): u64 {
         // Asks ascending: insert before first >= price. Bids descending: insert before first <= price.
         let i = 0;
-        let n = vector::length(prices);
+        let n = prices.length();
         while (i < n) {
-            let p = *vector::borrow(prices, i);
+            let p = prices[i];
             if (is_ask) {
                 if (price <= p) return i;
             } else {
                 if (price >= p) return i;
             };
-            i = i + 1;
+            i += 1;
         };
         n
     }
 
     fun shift_right_and_insert(prices: &mut vector<u64>, idx: u64, price: u64) {
-        let len = vector::length(prices);
+        let len = prices.length();
         let j = len - 1;
         while (j > idx) {
-            let val = *vector::borrow(prices, j - 1);
-            *vector::borrow_mut(prices, j) = val;
-            j = j - 1;
+            let val = prices[j - 1];
+            *prices.borrow_mut(j) = val;
+            j -= 1;
         };
-        *vector::borrow_mut(prices, idx) = price;
+        *prices.borrow_mut(idx) = price;
     }
 
     fun sum_open_size(orders: &vector<Order>): u64 {
         let total = 0;
         let i = 0;
-        let n = vector::length(orders);
+        let n = orders.length();
         while (i < n) {
-            let o = *vector::borrow(orders, i);
-            total = total + (o.size - o.filled);
-            i = i + 1;
+            let o = orders[i];
+            total += (o.size - o.filled);
+            i += 1;
         };
         total
     }
@@ -888,12 +888,12 @@ module hypermove_vault::orderbook {
         if (order.side == ASK) {
             let refund = coin::extract(&mut market.base_escrow, remaining);
             coin::deposit(order.user, refund);
-            market.base_total = market.base_total - remaining;
+            market.base_total -= remaining;
         } else {
             let refund_amount = (remaining * order.price) / market.lot_size;
             let refund = coin::extract(&mut market.quote_escrow, refund_amount);
             coin::deposit(order.user, refund);
-            market.quote_total = market.quote_total - refund_amount;
+            market.quote_total -= refund_amount;
         };
     }
 }
