@@ -226,7 +226,7 @@ module hypermove_vault::orderbook {
         tick_size: u64,
         min_size: u64,
         fee_rate_bps: u64,
-    ) {
+    ) acquires MarketRegistry {
         let _ = create_market<BaseCoin, QuoteCoin>(
             account, registry_addr, base_name, quote_name, lot_size, tick_size, min_size, fee_rate_bps
         );
@@ -333,7 +333,7 @@ module hypermove_vault::orderbook {
         price: u64,
         size: u64,
         restriction: u8,
-    ) {
+    ) acquires Market {
         let _ = place_limit_order<BaseCoin, QuoteCoin>(account, market_addr, side, price, size, restriction);
     }
 
@@ -602,7 +602,7 @@ module hypermove_vault::orderbook {
         order_id: u64,
         side: bool,
         price: u64,
-    ) {
+    ) acquires Market {
         let _ = cancel_order<BaseCoin, QuoteCoin>(account, market_addr, order_id, side, price);
     }
 
@@ -715,12 +715,12 @@ module hypermove_vault::orderbook {
     }
 
     // ===== Internal structs =====
-    struct PriceLevel has store {
+    struct PriceLevel has store, drop {
         total_size: u64,
         orders: vector<Order>,
     }
 
-    struct OrderLocator has store {
+    struct OrderLocator has store, copy, drop {
         side: bool,
         price: u64,
         idx: u64,

@@ -1,24 +1,19 @@
 module hypermove_vault::orderbook_tests {
-    use std::string::utf8;
-    use std::signer;
-    use aptos_framework::account;
-    use aptos_framework::coin;
-    use aptos_framework::aptos_coin::AptosCoin;
-
-    use crate::orderbook;
-    use crate::mock_token;
-    use crate::mock_quote_token;
+    use std::string;
+    use hypermove_vault::orderbook;
+    use hypermove_vault::mock_token;
+    use hypermove_vault::mock_quote_token;
 
     #[test_only]
     public fun setup(owner: &signer) {
-        mock_token::initialize(owner, utf8(b"BASE"), utf8(b"BASE"), 6, true);
-        mock_quote_token::initialize(owner, utf8(b"QUOTE"), utf8(b"QUOTE"), 6, true);
+        mock_token::initialize(owner, string::utf8(b"BASE"), string::utf8(b"BASE"), 6, true);
+        mock_quote_token::initialize(owner, string::utf8(b"QUOTE"), string::utf8(b"QUOTE"), 6, true);
         orderbook::initialize_registry_entry(owner);
         let _ = orderbook::create_market<mock_token::MockToken, mock_quote_token::MockQuoteToken>(
             owner,
             signer::address_of(owner),
-            utf8(b"BASE"),
-            utf8(b"QUOTE"),
+            string::utf8(b"BASE"),
+            string::utf8(b"QUOTE"),
             1000000, /* lot */
             1000000, /* tick */
             1000000, /* min */
