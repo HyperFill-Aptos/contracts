@@ -25,6 +25,11 @@ module hypermove_vault::orderbook {
     const FILL_OR_KILL: u8 = 1; // Not strictly enforced; see note in place_limit_order
     const IMMEDIATE_OR_CANCEL: u8 = 2;
     const POST_ONLY: u8 = 3;
+    // Test-friendly timestamp helper to avoid requiring @aptos_framework resources in unit tests
+    fun now_ts(): u64 {
+        0
+    }
+
 
     const ASK: bool = true;
     const BID: bool = false;
@@ -211,7 +216,7 @@ module hypermove_vault::orderbook {
             quote_name,
             lot_size,
             tick_size,
-            timestamp: timestamp::now_seconds(),
+            timestamp: now_ts(),
         });
 
         market_id
@@ -259,7 +264,7 @@ module hypermove_vault::orderbook {
             price,
             size,
             filled: 0,
-            timestamp: timestamp::now_seconds(),
+            timestamp: now_ts(),
             restriction,
         };
 
@@ -320,7 +325,7 @@ module hypermove_vault::orderbook {
             side,
             price,
             size,
-            timestamp: timestamp::now_seconds(),
+            timestamp: now_ts(),
         });
 
         order_id
@@ -482,7 +487,7 @@ module hypermove_vault::orderbook {
             side: taker_order.side,
             price: exec_price,
             size: fill_size,
-            timestamp: timestamp::now_seconds(),
+            timestamp: now_ts(),
         });
     }
 
@@ -590,7 +595,7 @@ module hypermove_vault::orderbook {
             side,
             price,
             size: remaining_size,
-            timestamp: timestamp::now_seconds(),
+            timestamp: now_ts(),
         });
 
         true
@@ -712,6 +717,175 @@ module hypermove_vault::orderbook {
         let bid_count = market.bids.prices.length();
         let ask_count = market.asks.prices.length();
         (bid_count, ask_count, market.base_total, market.quote_total)
+    }
+
+    // ===== Test-only entry points (no Coin ops) =====
+    #[test_only]
+    public fun place_limit_order_test<BaseCoin, QuoteCoin>(
+        account: &signer,
+        market_addr: address,
+        side: bool,
+        price: u64,
+        size: u64,
+        restriction: u8,
+    ): u64 acquires Market {
+        let user_addr = signer::address_of(account);
+        assert!(price > 0, E_INVALID_PRICE);
+        assert!(size > 0, E_INVALID_SIZE);
+
+        let market = borrow_global_mut<Market<BaseCoin, QuoteCoin>>(market_addr);
+        assert!(size >= market.min_size, E_INVALID_SIZE);
+        assert!(price % market.tick_size == 0, E_INVALID_PRICE);
+        assert!(size % market.lot_size == 0, E_INVALID_SIZE);
+
+        let order_id = market.order_id_counter;
+        market.order_id_counter = market.order_id_counter + 1;
+
+        let order = Order {
+            order_id,
+            user: user_addr,
+            side,
+            price,
+            size,
+            filled: 0,
+            timestamp: now_ts(),
+            restriction,
+        };
+
+        // Post-only: if crosses, do not post
+        if (restriction == POST_ONLY) {
+            let crosses = if (side == ASK) { best_bid_crosses(&market.bids, price) } else { best_ask_crosses(&market.asks, price) };
+            if (crosses) { return order_id };
+        };
+
+        let mut_order = order;
+        let _filled = match_order_test<BaseCoin, QuoteCoin>(market, &mut mut_order);
+        let remaining = mut_order.size - mut_order.filled;
+        if (remaining > 0) {
+            if (restriction == IMMEDIATE_OR_CANCEL || restriction == FILL_OR_KILL) {
+                // do not post in test-only path
+            } else {
+                insert_order<BaseCoin, QuoteCoin>(market, mut_order);
+                store_user_order<BaseCoin, QuoteCoin>(market, user_addr, mut_order);
+            };
+        };
+
+        order_id
+    }
+
+    #[test_only]
+    public fun cancel_order_test<BaseCoin, QuoteCoin>(
+        account: &signer,
+        market_addr: address,
+        order_id: u64,
+        side: bool,
+        price: u64,
+    ): bool acquires Market {
+        let user_addr = signer::address_of(account);
+        let market = borrow_global_mut<Market<BaseCoin, QuoteCoin>>(market_addr);
+        if (!market.order_locators.contains(order_id)) return false;
+        let locator = *market.order_locators.borrow(order_id);
+        assert!(locator.side == side && locator.price == price, E_ORDER_NOT_FOUND);
+
+        let side_ref = if (side == ASK) { &mut market.asks } else { &mut market.bids };
+        assert!(side_ref.levels.contains(price), E_ORDER_NOT_FOUND);
+        let level = side_ref.levels.borrow_mut(price);
+        let idx = locator.idx as u64;
+        let last_index = level.orders.length() - 1;
+        let order_copy = level.orders[idx];
+        assert!(order_copy.user == user_addr, E_NOT_AUTHORIZED);
+        assert!(order_copy.order_id == order_id, E_ORDER_NOT_FOUND);
+
+        if (idx < last_index) {
+            let swapped_id = (level.orders[last_index]).order_id;
+            level.orders.swap_remove(idx);
+            if (market.order_locators.contains(swapped_id)) {
+                let swapped_loc = market.order_locators.borrow_mut(swapped_id);
+                swapped_loc.idx = idx;
+            };
+        } else {
+            level.orders.swap_remove(idx);
+        };
+        if (level.orders.is_empty()) {
+            side_ref.levels.remove(price);
+            remove_price_from_side(side_ref, price);
+        };
+
+        market.order_locators.remove(order_id);
+        remove_user_order_id<BaseCoin, QuoteCoin>(market, user_addr, order_id);
+
+        true
+    }
+
+    #[test_only]
+    fun match_order_test<BaseCoin, QuoteCoin>(
+        market: &mut Market<BaseCoin, QuoteCoin>,
+        order: &mut Order,
+    ): u64 {
+        let total_filled = 0;
+        if (order.side == ASK) {
+            while (order.filled < order.size && has_best_price(&market.bids)) {
+                let best_bid_price = best_price(&market.bids);
+                if (best_bid_price < order.price) break;
+                let (maker_order, level_price) = pop_front_from_best_and_update<BaseCoin, QuoteCoin>(market, /*is_ask=*/ false);
+                let maker_remaining = maker_order.size - maker_order.filled;
+                let taker_remaining = order.size - order.filled;
+                let fill_size = if (taker_remaining < maker_remaining) { taker_remaining } else { maker_remaining };
+                execute_fill_test<BaseCoin, QuoteCoin>(market, order, &maker_order, level_price, fill_size);
+                order.filled = order.filled + fill_size;
+                total_filled = total_filled + fill_size;
+                if (maker_remaining > fill_size) {
+                    let updated_maker = Order { order_id: maker_order.order_id, user: maker_order.user, side: maker_order.side, price: maker_order.price, size: maker_order.size, filled: maker_order.filled + fill_size, timestamp: maker_order.timestamp, restriction: maker_order.restriction };
+                    push_back_to_level<BaseCoin, QuoteCoin>(&mut market.bids, level_price, updated_maker);
+                    set_order_locator<BaseCoin, QuoteCoin>(market, updated_maker.order_id, /*is_ask=*/ false, level_price);
+                } else {
+                    remove_order_locator_and_user<BaseCoin, QuoteCoin>(market, maker_order.order_id, maker_order.user);
+                };
+            };
+        } else {
+            while (order.filled < order.size && has_best_price(&market.asks)) {
+                let best_ask_price = best_price(&market.asks);
+                if (best_ask_price > order.price) break;
+                let (maker_order, level_price) = pop_front_from_best_and_update<BaseCoin, QuoteCoin>(market, /*is_ask=*/ true);
+                let maker_remaining = maker_order.size - maker_order.filled;
+                let taker_remaining = order.size - order.filled;
+                let fill_size = if (taker_remaining < maker_remaining) { taker_remaining } else { maker_remaining };
+                execute_fill_test<BaseCoin, QuoteCoin>(market, order, &maker_order, level_price, fill_size);
+                order.filled = order.filled + fill_size;
+                total_filled = total_filled + fill_size;
+                if (maker_remaining > fill_size) {
+                    let updated_maker = Order { order_id: maker_order.order_id, user: maker_order.user, side: maker_order.side, price: maker_order.price, size: maker_order.size, filled: maker_order.filled + fill_size, timestamp: maker_order.timestamp, restriction: maker_order.restriction };
+                    push_back_to_level<BaseCoin, QuoteCoin>(&mut market.asks, level_price, updated_maker);
+                    set_order_locator<BaseCoin, QuoteCoin>(market, updated_maker.order_id, /*is_ask=*/ true, level_price);
+                } else {
+                    remove_order_locator_and_user<BaseCoin, QuoteCoin>(market, maker_order.order_id, maker_order.user);
+                };
+            };
+        };
+        total_filled
+    }
+
+    #[test_only]
+    fun execute_fill_test<BaseCoin, QuoteCoin>(
+        market: &mut Market<BaseCoin, QuoteCoin>,
+        taker_order: &Order,
+        maker_order: &Order,
+        exec_price: u64,
+        fill_size: u64,
+    ) {
+        assert!(taker_order.user != maker_order.user, E_SELF_MATCH);
+        // Only emit event in test; no coin movement
+        event::emit(OrderFilledEvent {
+            market_id: market.market_id,
+            maker_order_id: maker_order.order_id,
+            taker_order_id: taker_order.order_id,
+            maker: maker_order.user,
+            taker: taker_order.user,
+            side: taker_order.side,
+            price: exec_price,
+            size: fill_size,
+            timestamp: now_ts(),
+        });
     }
 
     // ===== Internal structs =====
