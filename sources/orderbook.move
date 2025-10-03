@@ -7,7 +7,6 @@ module hypermove_vault::orderbook {
     use aptos_framework::event;
     use aptos_framework::account;
     use aptos_framework::table::{Self, Table};
-    use aptos_framework::timestamp;
 
     const E_NOT_AUTHORIZED: u64 = 1;
     const E_INVALID_PRICE: u64 = 2;
@@ -525,7 +524,7 @@ module hypermove_vault::orderbook {
             side: order.side,
             price: order.price,
             size: order.size,
-            timestamp: timestamp::now_seconds(),
+            timestamp: now_ts(),
         });
     }
 
@@ -982,6 +981,12 @@ module hypermove_vault::orderbook {
     }
 
     fun push_back_to_level<BaseCoin, QuoteCoin>(side: &mut OrderBookSide<BaseCoin, QuoteCoin>, price: u64, order: Order) {
+        if (!side.levels.contains(price)) {
+            let idx = find_insert_index(&side.prices, price, side.is_ask);
+            side.prices.push_back(0);
+            shift_right_and_insert(&mut side.prices, idx, price);
+            side.levels.add(price, PriceLevel { total_size: 0, orders: vector::empty<Order>() });
+        };
         let level = side.levels.borrow_mut(price);
         level.orders.push_back(order);
         level.total_size += (order.size - order.filled);
