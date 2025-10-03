@@ -4,7 +4,7 @@ version = "1.0.0"
 authors = ["HyperMove Team"]
 
 [addresses]
-hypermove_vault = "96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82"
+hypermove_vault = "0xc4bd839f1b57aaf6daa5feefab82f3b6b78b4fe0aa2971b9de2a9297878bc576"
 
 [dev-addresses]
 hypermove_vault = "0x42"

@@ -1,0 +1,79 @@
+# Orderbook local/testnet CLI script
+# Fill in addresses as needed. Assumes:
+# - Deployer is the same as `hypermove_vault` address in Move.toml for simplicity
+# - Using MockToken as Base, MockQuoteToken as Quote
+
+export PROFILE=testnet
+export OWNER=0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82
+
+# 0) Fund and show addresses
+aptos account fund-with-faucet --profile $PROFILE --amount 100000000
+aptos account list --profile $PROFILE
+
+# 1) Initialize tokens (base & quote)
+aptos move run \
+  --function-id ${OWNER}::mock_token::initialize \
+  --args string:"BASE" string:"BASE" u8:6 bool:true \
+  --profile $PROFILE
+
+aptos move run \
+  --function-id ${OWNER}::mock_quote_token::initialize \
+  --args string:"QUOTE" string:"QUOTE" u8:6 bool:true \
+  --profile $PROFILE
+
+# 2) Register accounts
+aptos move run --function-id ${OWNER}::mock_token::register --profile $PROFILE
+aptos move run --function-id ${OWNER}::mock_quote_token::register --profile $PROFILE
+
+# 3) Mint to owner
+aptos move run \
+  --function-id ${OWNER}::mock_token::mint \
+  --args address:${OWNER} u64:100000000000 \
+  --profile $PROFILE
+
+aptos move run \
+  --function-id ${OWNER}::mock_quote_token::mint \
+  --args address:${OWNER} u64:100000000000 \
+  --profile $PROFILE
+
+# 4) Initialize registry
+aptos move run \
+  --function-id ${OWNER}::orderbook::initialize_registry_entry \
+  --profile $PROFILE
+
+# 5) Create market (lot_size=1e6, tick_size=1e6, min_size=1e6, fee=10 bps)
+aptos move run \
+  --function-id ${OWNER}::orderbook::create_market_entry \
+  --type-args ${OWNER}::mock_token::MockToken ${OWNER}::mock_quote_token::MockQuoteToken \
+  --args address:${OWNER} string:"BASE" string:"QUOTE" u64:1000000 u64:1000000 u64:1000000 u64:10 \
+  --profile $PROFILE
+
+# 6) Place resting ask at 2.00 for size 10
+aptos move run \
+  --function-id ${OWNER}::orderbook::place_limit_order_entry \
+  --type-args ${OWNER}::mock_token::MockToken ${OWNER}::mock_quote_token::MockQuoteToken \
+  --args address:${OWNER} bool:true u64:2000000 u64:10000000 u8:0 \
+  --profile $PROFILE
+
+# 7) Place crossing bid at 2.00 for size 5 (should match partially)
+aptos move run \
+  --function-id ${OWNER}::orderbook::place_limit_order_entry \
+  --type-args ${OWNER}::mock_token::MockToken ${OWNER}::mock_quote_token::MockQuoteToken \
+  --args address:${OWNER} bool:false u64:2000000 u64:5000000 u8:0 \
+  --profile $PROFILE
+
+# 8) View best bid/ask
+aptos move view \
+  --function-id ${OWNER}::orderbook::get_best_bid_ask \
+  --type-args ${OWNER}::mock_token::MockToken ${OWNER}::mock_quote_token::MockQuoteToken \
+  --args address:${OWNER} \
+  --profile $PROFILE
+
+# 9) View depth (top 5)
+aptos move view \
+  --function-id ${OWNER}::orderbook::get_order_book_depth \
+  --type-args ${OWNER}::mock_token::MockToken ${OWNER}::mock_quote_token::MockQuoteToken \
+  --args address:${OWNER} u64:5 \
+  --profile $PROFILE
+
+
