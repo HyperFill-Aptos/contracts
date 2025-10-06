@@ -81,7 +81,7 @@ aptos move run \
 aptos move run \
   --function-id 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::vault::add_authorized_agent \
   --type-args 0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82::mock_token::MockToken \
-  --args address:<AGENT_ADDRESS> address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
+  --args address:0xf1eb6be05ac996cd9ec68bbcfd68f8881fe37cadf68eae3cf68567104d0689f8 address:0x96d2b185a5b581f98dc1df57b59a5875eb53b3a65ef7a9b0d5e42aa44c3b8b82 \
   --profile $PROFILE
 
 # ===== 5. USER DEPOSIT OPERATIONS =====
